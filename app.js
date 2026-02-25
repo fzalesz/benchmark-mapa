@@ -1,6 +1,6 @@
 // --- Estado ---
-let dataRows = [];      // filas del Excel en formato normalizado
-let years = [];         // años disponibles
+let dataRows = [];
+let years = [];
 let comunasLayer = null;
 
 // --- Mapa ---
@@ -10,18 +10,27 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-// --- Cargar comunas desde GeoJSON (OJO al nombre del archivo) ---
-fetch('comunas_magallanes.geojson.geojson')
+// --- UI ---
+const excelFile = document.getElementById('excelFile');
+const yearSelect = document.getElementById('yearSelect');
+const results = document.getElementById('results');
+const statusEl = document.getElementById('status');
+
+// Si tu HTML tiene el botón exportZonas pero ya no lo usarás, lo desactivamos:
+const exportBtn = document.getElementById('exportZonas');
+if (exportBtn) {
+  exportBtn.disabled = true;
+  exportBtn.title = "Deshabilitado (usando comunas como zonas fijas).";
+}
+
+// --- Cargar comunas desde GeoJSON ---
+fetch('comunas_magallanes.geojson')  // ✅ OJO: una sola extensión
   .then((response) => {
-    if (!response.ok) {
-      throw new Error(`No se pudo cargar comunas_magallanes.geojson (HTTP ${response.status}). 
-Revisa que el archivo exista en el repo y esté en la raíz.`);
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status} al cargar comunas_magallanes.geojson`);
     return response.json();
   })
   .then((data) => {
-
-    const comunasLayer = L.geoJSON(data, {
+    comunasLayer = L.geoJSON(data, {
       style: () => ({
         color: "#444",
         weight: 1,
@@ -33,6 +42,7 @@ Revisa que el archivo exista en el repo y esté en la raíz.`);
           feature?.properties?.COMUNA ||
           feature?.properties?.NOM_COMUNA ||
           feature?.properties?.nombre ||
+          feature?.properties?.Name ||
           "Comuna";
 
         layer.bindTooltip(nombreComuna, { sticky: true });
@@ -44,20 +54,14 @@ Revisa que el archivo exista en el repo y esté en la raíz.`);
     }).addTo(map);
 
     map.fitBounds(comunasLayer.getBounds());
-    setStatus("Comunas cargadas. Haz clic en una comuna.");
+    setStatus("Comunas cargadas. Carga un Excel y haz clic en una comuna.");
   })
   .catch((err) => {
     console.error(err);
-    setStatus("ERROR: No se pudo cargar el GeoJSON de comunas. Revisa consola (F12).");
+    setStatus("ERROR cargando comunas. Revisa F12 → Console.");
   });
-// --- UI ---
-const excelFile = document.getElementById('excelFile');
-const yearSelect = document.getElementById('yearSelect');
-const results = document.getElementById('results');
-const statusEl = document.getElementById('status');
 
-document.getElementById('exportZonas').addEventListener('click', exportZonas);
-
+// --- Cargar Excel ---
 excelFile.addEventListener('change', async (ev) => {
   const file = ev.target.files?.[0];
   if (!file) return;
@@ -65,33 +69,32 @@ excelFile.addEventListener('change', async (ev) => {
   const arrayBuffer = await file.arrayBuffer();
   const wb = XLSX.read(arrayBuffer, { type: "array" });
 
-  const sheetName = wb.SheetNames[0]; // si quieres: wb.SheetNames.find(n => n.toLowerCase() === 'datos')
+  const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
 
   const raw = XLSX.utils.sheet_to_json(ws, { defval: null });
   dataRows = normalizeRows(raw);
 
-  years = [...new Set(dataRows.map(r => r.anio))].sort((a,b)=>a-b);
+  years = [...new Set(dataRows.map(r => r.anio))].sort((a, b) => a - b);
   populateYears(years);
-  setStatus(`Excel cargado: ${dataRows.length} filas, años: ${years.join(", ")}`);
-  results.innerHTML = `<div class="small">Ahora dibuja o selecciona una zona para ver promedios.</div>`;
+
+  setStatus(`Excel cargado: ${dataRows.length} filas. Años: ${years.join(", ")}`);
+  results.innerHTML = `<div class="small">Haz clic en una comuna para ver promedios.</div>`;
 });
 
 yearSelect.addEventListener('change', () => {
-  // si el usuario ya seleccionó una zona, debe volver a hacer clic para recalcular
-  setStatus("Año cambiado. Haz clic en una zona para recalcular.");
+  setStatus("Año cambiado. Haz clic en una comuna para recalcular.");
 });
 
 // --- Funciones de datos ---
 function normalizeRows(rows) {
-  // Normaliza tipos y nombres esperados
   return rows.map((r, idx) => {
     const lat = Number(r.lat ?? r.Lat ?? r.LAT);
     const lon = Number(r.lon ?? r.Lon ?? r.LON ?? r.long ?? r.Long);
-
     const anio = Number(r.anio ?? r.Año ?? r.ANO ?? r.year);
+
     return {
-      _row: idx+2,
+      _row: idx + 2,
       id_estancia: String(r.id_estancia ?? r.ID ?? r.estancia ?? ""),
       lat, lon, anio,
       pct_destete: numOrNull(r.pct_destete),
@@ -111,14 +114,14 @@ function numOrNull(x) {
   return isFinite(n) ? n : null;
 }
 
-function populateYears(years) {
+function populateYears(yearsArr) {
   yearSelect.innerHTML = "";
   const optAll = document.createElement('option');
   optAll.value = "ALL";
   optAll.textContent = "Todos";
   yearSelect.appendChild(optAll);
 
-  years.forEach(y => {
+  yearsArr.forEach(y => {
     const opt = document.createElement('option');
     opt.value = String(y);
     opt.textContent = String(y);
@@ -126,7 +129,7 @@ function populateYears(years) {
   });
 }
 
-// --- Click en zona: calcular promedios ---
+// --- Click en comuna: calcular promedios ---
 function onZonaClick(feature, layer, zonaNameFromLayer) {
   if (!dataRows.length) {
     results.innerHTML = "Primero carga un Excel.";
@@ -134,75 +137,59 @@ function onZonaClick(feature, layer, zonaNameFromLayer) {
   }
 
   const selectedYear = yearSelect.value;
-  const poly = layer.toGeoJSON();
+  const poly = layer.toGeoJSON(); // Polygon/MultiPolygon válido para Turf
 
   const points = dataRows
     .filter(r => selectedYear === "ALL" ? true : r.anio === Number(selectedYear))
     .filter(r => turf.booleanPointInPolygon(turf.point([r.lon, r.lat]), poly));
 
-  const zonaName =
-    zonaNameFromLayer ||
-    feature?.properties?.Comuna ||
-    feature?.properties?.COMUNA ||
-    feature?.properties?.NOM_COMUNA ||
-    "Comuna";
-
-  renderBenchmark(zonaName, points, selectedYear);
-}
-}
-
-function featureToTurfPolygon(geojson) {
-  // Soporta Polygon y MultiPolygon
-  return geojson;
+  renderBenchmark(zonaNameFromLayer || "Comuna", points, selectedYear);
 }
 
 function mean(arr) {
   const vals = arr.filter(v => v !== null && v !== undefined && isFinite(v));
   if (!vals.length) return null;
-  const s = vals.reduce((a,b)=>a+b,0);
-  return s / vals.length;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
 function sum(arr) {
   const vals = arr.filter(v => v !== null && v !== undefined && isFinite(v));
   if (!vals.length) return null;
-  return vals.reduce((a,b)=>a+b,0);
+  return vals.reduce((a, b) => a + b, 0);
 }
 
 function renderBenchmark(zonaName, rowsInZona, selectedYear) {
   const n = rowsInZona.length;
 
-  // Promedios (puedes cambiar a ponderados si quieres por nº animales, etc.)
   const avgDestete = mean(rowsInZona.map(r => r.pct_destete));
   const avgSenalada = mean(rowsInZona.map(r => r.pct_senalada));
   const avgPesoVara = mean(rowsInZona.map(r => r.peso_vara));
 
-  // Totales de categorías (normalmente tiene sentido sumar)
   const totCorderos = sum(rowsInZona.map(r => r.n_corderos));
   const totBorregos = sum(rowsInZona.map(r => r.n_borregos));
   const totOvejas = sum(rowsInZona.map(r => r.n_ovejas));
   const totCarneros = sum(rowsInZona.map(r => r.n_carneros));
 
-  // Histórico: serie por año dentro de la zona (si estás en ALL)
   let histHtml = "";
   if (selectedYear === "ALL") {
     const byYear = groupBy(rowsInZona, r => r.anio);
-    const yearsSorted = Object.keys(byYear).map(Number).sort((a,b)=>a-b);
-    const rows = yearsSorted.map(y => {
+    const yearsSorted = Object.keys(byYear).map(Number).sort((a, b) => a - b);
+    const histRows = yearsSorted.map(y => {
       const rr = byYear[y];
       return `
         <tr>
           <td>${y}</td>
-          <td>${fmt(mean(rr.map(r=>r.pct_destete)))}</td>
-          <td>${fmt(mean(rr.map(r=>r.pct_senalada)))}</td>
-          <td>${fmt(mean(rr.map(r=>r.peso_vara)))}</td>
+          <td>${fmt(mean(rr.map(r => r.pct_destete)))}</td>
+          <td>${fmt(mean(rr.map(r => r.pct_senalada)))}</td>
+          <td>${fmt(mean(rr.map(r => r.peso_vara)))}</td>
         </tr>`;
     }).join("");
+
     histHtml = `
       <h3>Histórico (promedios)</h3>
       <table>
         <thead><tr><th>Año</th><th>% Destete</th><th>% Señalada</th><th>Peso vara</th></tr></thead>
-        <tbody>${rows || ""}</tbody>
+        <tbody>${histRows}</tbody>
       </table>`;
   }
 
@@ -245,7 +232,6 @@ function groupBy(arr, keyFn) {
 
 function fmt(x) {
   if (x === null || x === undefined) return "—";
-  // formato con 1 decimal
   return (Math.round(x * 10) / 10).toString();
 }
 
@@ -256,34 +242,10 @@ function fmtInt(x) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, m => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[m]));
 }
 
-function setStatus(msg) { statusEl.textContent = msg; }
-
-// Exportar zonas a GeoJSON descargable
-function exportZonas() {
-  const features = [];
-  drawnItems.eachLayer(layer => {
-    const gj = layer.toGeoJSON();
-    // conservar nombre
-    const name = layer.feature?.properties?.name || gj.properties?.name || "Zona";
-    gj.properties = { ...(gj.properties||{}), name };
-    features.push(gj);
-  });
-
-  const geo = { type:"FeatureCollection", features };
-  const blob = new Blob([JSON.stringify(geo, null, 2)], { type:"application/geo+json" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = "zonas.geojson";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-
-  setStatus("GeoJSON exportado. Sube el archivo al repo para que quede guardado.");
+function setStatus(msg) {
+  if (statusEl) statusEl.textContent = msg;
 }
