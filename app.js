@@ -11,7 +11,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 // --- Cargar comunas desde GeoJSON (OJO al nombre del archivo) ---
-fetch('comunas_magallanes.geojson')
+fetch('comunas_magallanes.geojson.geojson')
   .then((response) => {
     if (!response.ok) {
       throw new Error(`No se pudo cargar comunas_magallanes.geojson (HTTP ${response.status}). 
