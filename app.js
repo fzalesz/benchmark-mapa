@@ -15,48 +15,41 @@ fetch('comunas_magallanes.geojson')
   .then((response) => {
     if (!response.ok) {
       throw new Error(`No se pudo cargar comunas_magallanes.geojson (HTTP ${response.status}). 
-¿Está en la raíz del repo y con ese nombre exacto?`);
+Revisa que el archivo exista en el repo y esté en la raíz.`);
     }
     return response.json();
   })
   .then((data) => {
 
-    comunasLayer = L.geoJSON(data, {
+    const comunasLayer = L.geoJSON(data, {
       style: () => ({
         color: "#444",
         weight: 1,
         fillOpacity: 0.2
       }),
       onEachFeature: (feature, layer) => {
-
-        // Nombre de comuna: prueba varios campos típicos
         const nombreComuna =
           feature?.properties?.Comuna ||
           feature?.properties?.COMUNA ||
           feature?.properties?.NOM_COMUNA ||
           feature?.properties?.nombre ||
-          feature?.properties?.Name ||
           "Comuna";
 
         layer.bindTooltip(nombreComuna, { sticky: true });
 
         layer.on('click', () => {
-          console.log("Comuna seleccionada:", feature.properties);
           onZonaClick(feature, layer, nombreComuna);
         });
       }
     }).addTo(map);
 
-    // Ajustar zoom automáticamente a Magallanes (a los límites del GeoJSON)
     map.fitBounds(comunasLayer.getBounds());
-
-    setStatus("Comunas cargadas correctamente. Haz clic en una comuna para ver promedios.");
+    setStatus("Comunas cargadas. Haz clic en una comuna.");
   })
   .catch((err) => {
     console.error(err);
-    setStatus("ERROR cargando comunas. Abre F12 → Console para ver el detalle.");
+    setStatus("ERROR: No se pudo cargar el GeoJSON de comunas. Revisa consola (F12).");
   });
-
 // --- UI ---
 const excelFile = document.getElementById('excelFile');
 const yearSelect = document.getElementById('yearSelect');
