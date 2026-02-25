@@ -10,7 +10,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 // Cargar comunas desde GeoJSON
-fetch('zonas.geojson')
+fetch('12.geojson')
   .then(response => response.json())
   .then(data => {
 
