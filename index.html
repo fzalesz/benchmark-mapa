@@ -3,44 +3,53 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Benchmarking Productivo por Zona</title>
+  <title>Benchmarking por comuna - Magallanes</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <header>
-    <h1>Benchmarking productivo por zona</h1>
+    <h1>Benchmarking productivo por comuna (Magallanes)</h1>
+
     <div class="controls">
       <label class="btn">
-        Cargar Excel
+        Cargar Excel (.xlsx)
         <input id="excelFile" type="file" accept=".xlsx,.xls" />
       </label>
 
-      <label>Año:
+      <label class="inline">
+        Año:
         <select id="yearSelect"></select>
       </label>
 
-      <button id="exportZonas" class="btn-secondary">Exportar zonas (GeoJSON)</button>
-      <span id="status"></span>
+      <span id="status" class="status">Cargando comunas…</span>
+    </div>
+
+    <div class="help">
+      <b>Excel mínimo:</b> columnas <code>lat</code>, <code>lon</code>, <code>anio</code>.
+      Variables opcionales: <code>pct_destete</code>, <code>pct_senalada</code>, <code>peso_vara</code>, y conteos.
     </div>
   </header>
 
   <main>
     <div id="map"></div>
+
     <aside id="panel">
       <h2>Resultados</h2>
-      <div id="results">Carga un Excel y dibuja/selecciona una zona.</div>
+      <div id="results">Carga un Excel y haz clic en una comuna.</div>
+      <div class="debug" id="debug"></div>
     </aside>
   </main>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <!-- Librerías (orden IMPORTA) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+  <!-- XLSX DEBE CARGARSE ANTES DE app.js -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 
   <script src="app.js"></script>
-
 </body>
 </html>
