@@ -14,22 +14,19 @@
     <h1>Benchmarking productivo por comuna (Magallanes)</h1>
 
     <div class="controls">
-      <label class="btn">
-        Cargar Excel (.xlsx)
-        <input id="excelFile" type="file" accept=".xlsx,.xls" />
-      </label>
-
-      <label class="inline">
+      <div class="inline">
         Año:
         <select id="yearSelect"></select>
-      </label>
+      </div>
 
-      <span id="status" class="status">Cargando comunas…</span>
+      <span id="status" class="status">Cargando comunas y datos…</span>
     </div>
 
     <div class="help">
-      <b>Excel mínimo:</b> columnas <code>lat</code>, <code>lon</code>, <code>anio</code>.
-      Variables opcionales: <code>pct_destete</code>, <code>pct_senalada</code>, <code>peso_vara</code>, y conteos.
+      <b>Fuente de datos:</b> <code>benchmark.xlsx</code> (administrado por el equipo).
+      <br/>
+      <b>Excel mínimo:</b> columnas <code>comuna</code> y <code>anio</code>.
+      Variables opcionales: <code>pct_destete</code>, <code>pct_senalada</code>, <code>peso_vara</code>, y conteos por categoría.
     </div>
   </header>
 
@@ -38,7 +35,7 @@
 
     <aside id="panel">
       <h2>Resultados</h2>
-      <div id="results">Carga un Excel y haz clic en una comuna.</div>
+      <div id="results">Haz clic en una comuna para ver promedios.</div>
       <div class="debug" id="debug"></div>
     </aside>
   </main>
@@ -47,8 +44,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
-  <!-- XLSX DEBE CARGARSE ANTES DE app.js -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- XLSX (debe ir ANTES de app.js) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <script src="app.js"></script>
 </body>
