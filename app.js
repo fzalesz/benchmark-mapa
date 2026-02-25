@@ -1,25 +1,39 @@
 // ======================
-// Estado + Helpers UI
+// Configuración
+// ======================
+const EXCEL_URL = "benchmark.xlsx";              // en la raíz del repo
+const COMUNAS_GEOJSON_URL = "comunas_magallanes.geojson";
+
+// ======================
+// Estado
 // ======================
 let dataRows = [];
 let years = [];
 let comunasLayer = null;
+let lastComunaClicked = null;
 
-const excelFile = document.getElementById('excelFile');
+// ======================
+// UI
+// ======================
 const yearSelect = document.getElementById('yearSelect');
 const results = document.getElementById('results');
 const statusEl = document.getElementById('status');
 const debugEl = document.getElementById('debug');
 
-function setStatus(msg) {
-  statusEl.textContent = msg;
-}
-function setDebug(msg) {
-  debugEl.textContent = msg || "";
+function setStatus(msg) { statusEl.textContent = msg; }
+function setDebug(msg) { debugEl.textContent = msg || ""; }
+
+// Normaliza textos para comparar comunas (sin tildes, sin mayúsculas)
+function normalizeName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
 }
 
 // ======================
-// Mapa base
+// Mapa
 // ======================
 const map = L.map('map').setView([-53.0, -70.9], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -28,128 +42,98 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 // ======================
-// Cargar comunas (GeoJSON)
+// Cargar comunas
 // ======================
 async function loadComunas() {
-  try {
-    const url = 'comunas_magallanes.geojson'; // <- debe existir en la raíz del repo
-    const res = await fetch(url);
+  const res = await fetch(`${COMUNAS_GEOJSON_URL}?v=${Date.now()}`); // evita caché
+  if (!res.ok) throw new Error(`No se pudo cargar ${COMUNAS_GEOJSON_URL}. HTTP ${res.status}`);
+  const geo = await res.json();
 
-    if (!res.ok) {
-      throw new Error(`No se pudo cargar ${url}. HTTP ${res.status}. Verifica nombre/ubicación.`);
+  comunasLayer = L.geoJSON(geo, {
+    style: () => ({
+      color: "#444",
+      weight: 1,
+      fillOpacity: 0.2
+    }),
+    onEachFeature: (feature, layer) => {
+      const nombre =
+        feature?.properties?.Comuna ||
+        feature?.properties?.COMUNA ||
+        feature?.properties?.NOM_COMUNA ||
+        feature?.properties?.nombre ||
+        feature?.properties?.Name ||
+        "Comuna";
+
+      layer.bindTooltip(nombre, { sticky: true });
+
+      layer.on('click', () => {
+        lastComunaClicked = nombre;
+        onComunaClick(nombre);
+      });
     }
+  }).addTo(map);
 
-    const geo = await res.json();
-
-    comunasLayer = L.geoJSON(geo, {
-      style: () => ({
-        color: "#444",
-        weight: 1,
-        fillOpacity: 0.2
-      }),
-      onEachFeature: (feature, layer) => {
-        const nombre =
-          feature?.properties?.Comuna ||
-          feature?.properties?.COMUNA ||
-          feature?.properties?.NOM_COMUNA ||
-          feature?.properties?.nombre ||
-          feature?.properties?.Name ||
-          "Comuna";
-
-        layer.bindTooltip(nombre, { sticky: true });
-
-        layer.on('click', () => onComunaClick(feature, layer, nombre));
-      }
-    }).addTo(map);
-
-    map.fitBounds(comunasLayer.getBounds());
-    setStatus("Comunas cargadas. Ahora carga un Excel (.xlsx).");
-  } catch (err) {
-    console.error(err);
-    setStatus("ERROR cargando comunas. Revisa consola (F12).");
-    setDebug(String(err));
-  }
+  map.fitBounds(comunasLayer.getBounds());
 }
 
-loadComunas();
+// ======================
+// Cargar Excel desde GitHub Pages
+// ======================
+async function loadExcel() {
+  if (typeof XLSX === "undefined") {
+    throw new Error("XLSX no está cargado. Revisa que xlsx.full.min.js esté antes de app.js en index.html.");
+  }
+
+  // cache-busting para que al actualizar el Excel en GitHub se refleje rápido
+  const res = await fetch(`${EXCEL_URL}?v=${Date.now()}`);
+  if (!res.ok) throw new Error(`No se pudo cargar ${EXCEL_URL}. HTTP ${res.status}`);
+
+  const arrayBuffer = await res.arrayBuffer();
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+
+  const raw = XLSX.utils.sheet_to_json(ws, { defval: null });
+  dataRows = normalizeRows(raw);
+
+  if (!dataRows.length) {
+    throw new Error("No se encontraron filas válidas. Asegura columnas 'comuna' y 'anio' en benchmark.xlsx");
+  }
+
+  years = [...new Set(dataRows.map(r => r.anio))].sort((a, b) => a - b);
+  populateYears(years);
+}
 
 // ======================
-// Excel -> datos
+// Inicialización
 // ======================
-excelFile.addEventListener('change', async (ev) => {
+(async function init() {
   try {
-    const file = ev.target.files?.[0];
-    if (!file) return;
+    setStatus("Cargando comunas…");
+    await loadComunas();
 
-    // Validación: que XLSX exista
-    if (typeof XLSX === "undefined") {
-      throw new Error("XLSX no está cargado. Revisa que xlsx.full.min.js esté antes de app.js en index.html.");
-    }
+    setStatus("Cargando datos (benchmark.xlsx)…");
+    await loadExcel();
 
-    const arrayBuffer = await file.arrayBuffer();
-    const wb = XLSX.read(arrayBuffer, { type: "array" });
-
-    const sheetName = wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
-
-    const raw = XLSX.utils.sheet_to_json(ws, { defval: null });
-
-    dataRows = normalizeRows(raw);
-
-    if (!dataRows.length) {
-      throw new Error("No se cargaron filas válidas. Verifica que el Excel tenga columnas lat/lon/anio.");
-    }
-
-    years = [...new Set(dataRows.map(r => r.anio))].sort((a, b) => a - b);
-    populateYears(years);
-
-    setStatus(`Excel OK: ${dataRows.length} filas. Años: ${years.join(", ")}`);
+    setStatus(`Listo: ${dataRows.length} filas cargadas. Haz clic en una comuna.`);
     setDebug("");
-    results.innerHTML = `<div class="small">Listo. Haz clic en una comuna para ver promedios.</div>`;
+    results.innerHTML = `<div class="small">Haz clic en una comuna para ver promedios.</div>`;
   } catch (err) {
     console.error(err);
-    setStatus("ERROR cargando Excel. Revisa consola (F12).");
+    setStatus("ERROR inicializando. Revisa consola (F12).");
     setDebug(String(err));
   }
-});
+})();
 
+// ======================
+// Año (filtro)
+// ======================
 yearSelect.addEventListener('change', () => {
   setStatus("Año cambiado. Haz clic en una comuna para recalcular.");
+  // opcional: recalcular automáticamente la última comuna clickeada
+  if (lastComunaClicked) onComunaClick(lastComunaClicked);
 });
-
-// ======================
-// Normalización de columnas
-// ======================
-function normalizeRows(rows) {
-  return rows.map((r, idx) => {
-    // detectar variantes comunes de nombres
-    const lat = Number(r.lat ?? r.Lat ?? r.LAT ?? r.latitude ?? r.Latitud);
-    const lon = Number(r.lon ?? r.Lon ?? r.LON ?? r.long ?? r.Long ?? r.longitude ?? r.Longitud);
-    const anio = Number(r.anio ?? r.Año ?? r.ANO ?? r.year ?? r.Year);
-
-    return {
-      _row: idx + 2,
-      lat, lon, anio,
-
-      pct_destete: numOrNull(r.pct_destete ?? r.Pct_destete ?? r["%destete"] ?? r["% destete"]),
-      pct_senalada: numOrNull(r.pct_senalada ?? r.Pct_senalada ?? r["%señalada"] ?? r["% senalada"] ?? r["% señalada"]),
-      peso_vara: numOrNull(r.peso_vara ?? r.Peso_vara ?? r["peso vara"]),
-
-      n_corderos: numOrNull(r.n_corderos ?? r.Corderos),
-      n_borregos: numOrNull(r.n_borregos ?? r.Borregos),
-      n_ovejas: numOrNull(r.n_ovejas ?? r.Ovejas),
-      n_carneros: numOrNull(r.n_carneros ?? r.Carneros),
-    };
-  }).filter(r =>
-    isFinite(r.lat) && isFinite(r.lon) && isFinite(r.anio)
-  );
-}
-
-function numOrNull(x) {
-  if (x === null || x === undefined || x === "") return null;
-  const n = Number(x);
-  return isFinite(n) ? n : null;
-}
 
 function populateYears(yearsArr) {
   yearSelect.innerHTML = "";
@@ -167,22 +151,56 @@ function populateYears(yearsArr) {
 }
 
 // ======================
+// Normalización de filas Excel
+// ======================
+function normalizeRows(rows) {
+  return rows.map((r, idx) => {
+    const comunaRaw = r.comuna ?? r.Comuna ?? r.COMUNA ?? r["Comuna (INE)"] ?? "";
+    const comuna = String(comunaRaw || "").trim();
+
+    const anio = Number(r.anio ?? r.Año ?? r.ANO ?? r.year ?? r.Year);
+
+    return {
+      _row: idx + 2,
+      comuna,
+      anio,
+
+      pct_destete: numOrNull(r.pct_destete ?? r.Pct_destete ?? r["%destete"] ?? r["% destete"]),
+      pct_senalada: numOrNull(r.pct_senalada ?? r.Pct_senalada ?? r["%señalada"] ?? r["% senalada"] ?? r["% señalada"]),
+      peso_vara: numOrNull(r.peso_vara ?? r.Peso_vara ?? r["peso vara"]),
+
+      n_corderos: numOrNull(r.n_corderos ?? r.Corderos),
+      n_borregos: numOrNull(r.n_borregos ?? r.Borregos),
+      n_ovejas: numOrNull(r.n_ovejas ?? r.Ovejas),
+      n_carneros: numOrNull(r.n_carneros ?? r.Carneros),
+    };
+  }).filter(r => r.comuna && isFinite(r.anio));
+}
+
+function numOrNull(x) {
+  if (x === null || x === undefined || x === "") return null;
+  const n = Number(x);
+  return isFinite(n) ? n : null;
+}
+
+// ======================
 // Click comuna -> cálculo
 // ======================
-function onComunaClick(feature, layer, comunaName) {
+function onComunaClick(comunaNameFromMap) {
   if (!dataRows.length) {
-    results.innerHTML = "Primero carga un Excel (.xlsx).";
+    results.innerHTML = "Aún no se cargan datos (benchmark.xlsx).";
     return;
   }
 
   const selectedYear = yearSelect.value;
-  const poly = layer.toGeoJSON(); // polygon/multipolygon para Turf
+
+  const target = normalizeName(comunaNameFromMap);
 
   const rowsInComuna = dataRows
     .filter(r => selectedYear === "ALL" ? true : r.anio === Number(selectedYear))
-    .filter(r => turf.booleanPointInPolygon(turf.point([r.lon, r.lat]), poly));
+    .filter(r => normalizeName(r.comuna) === target);
 
-  renderBenchmark(comunaName, rowsInComuna, selectedYear);
+  renderBenchmark(comunaNameFromMap, rowsInComuna, selectedYear);
 }
 
 // ======================
@@ -212,10 +230,12 @@ function fmt(x) {
   if (x === null || x === undefined) return "—";
   return (Math.round(x * 10) / 10).toString();
 }
+
 function fmtInt(x) {
   if (x === null || x === undefined) return "—";
   return Math.round(x).toString();
 }
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, m => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -223,7 +243,7 @@ function escapeHtml(s) {
 }
 
 // ======================
-// Render resultados
+// Render
 // ======================
 function renderBenchmark(zonaName, rowsInZona, selectedYear) {
   const n = rowsInZona.length;
@@ -261,10 +281,19 @@ function renderBenchmark(zonaName, rowsInZona, selectedYear) {
       </table>`;
   }
 
+  // Nota útil cuando no hay match
+  const warn = (n === 0)
+    ? `<div class="small" style="margin-top:8px;">
+         ⚠ No hay filas para esta comuna con el filtro actual. Revisa que en el Excel la columna <b>comuna</b>
+         tenga el mismo nombre que el mapa (sinónimos/tildes se normalizan, pero "Natales" vs "Puerto Natales" no).
+       </div>`
+    : "";
+
   results.innerHTML = `
     <div class="small">Comuna seleccionada:</div>
     <h2 style="margin-top:6px;">${escapeHtml(zonaName)}</h2>
-    <div class="small">Filtro año: <b>${selectedYear}</b> | Registros dentro: <b>${n}</b></div>
+    <div class="small">Filtro año: <b>${selectedYear}</b> | Registros: <b>${n}</b></div>
+    ${warn}
 
     <h3>Promedios</h3>
     <table>
