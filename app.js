@@ -1,90 +1,61 @@
 // --- Estado ---
 let dataRows = [];      // filas del Excel en formato normalizado
 let years = [];         // años disponibles
-let zonasLayer = null;  // capa GeoJSON de zonas
-let drawnItems = null;  // grupo editable
+let comunasLayer = null;
 
 // --- Mapa ---
-const map = L.map('map').setView([-53.0, -70.9], 6); // ajusta al centro de tu región
+const map = L.map('map').setView([-53.0, -70.9], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18, attribution: '&copy; OpenStreetMap'
+  maxZoom: 18,
+  attribution: '&copy; OpenStreetMap'
 }).addTo(map);
-// Cargar comunas desde GeoJSON
-fetch('comunas_magallanes.geojson.geojson')
-  .then(response => response.json())
-  .then(data => {
 
-    L.geoJSON(data, {
-      style: {
+// --- Cargar comunas desde GeoJSON (OJO al nombre del archivo) ---
+fetch('comunas_magallanes.geojson')
+  .then((response) => {
+    if (!response.ok) {
+      throw new Error(`No se pudo cargar comunas_magallanes.geojson (HTTP ${response.status}). 
+¿Está en la raíz del repo y con ese nombre exacto?`);
+    }
+    return response.json();
+  })
+  .then((data) => {
+
+    comunasLayer = L.geoJSON(data, {
+      style: () => ({
         color: "#444",
         weight: 1,
         fillOpacity: 0.2
-      },
+      }),
+      onEachFeature: (feature, layer) => {
 
-      onEachFeature: function(feature, layer) {
+        // Nombre de comuna: prueba varios campos típicos
+        const nombreComuna =
+          feature?.properties?.Comuna ||
+          feature?.properties?.COMUNA ||
+          feature?.properties?.NOM_COMUNA ||
+          feature?.properties?.nombre ||
+          feature?.properties?.Name ||
+          "Comuna";
 
-        // Mostrar nombre al pasar el mouse
-        layer.bindTooltip(
-          feature.properties.COMUNA || 
-          feature.properties.nombre || 
-          "Comuna"
-        );
+        layer.bindTooltip(nombreComuna, { sticky: true });
 
-        // Acción al hacer clic
-        layer.on('click', function() {
+        layer.on('click', () => {
           console.log("Comuna seleccionada:", feature.properties);
-          onZonaClick(feature, layer);
+          onZonaClick(feature, layer, nombreComuna);
         });
       }
-
     }).addTo(map);
 
-  });
-drawnItems = new L.FeatureGroup();
-map.addLayer(drawnItems);
+    // Ajustar zoom automáticamente a Magallanes (a los límites del GeoJSON)
+    map.fitBounds(comunasLayer.getBounds());
 
-// Controles de dibujo
-const drawControl = new L.Control.Draw({
-  edit: { featureGroup: drawnItems },
-  draw: {
-    polygon: true,
-    polyline: false,
-    rectangle: true,
-    circle: false,
-    circlemarker: false,
-    marker: false
-  }
-});
-map.addControl(drawControl);
-
-// Cargar zonas guardadas (si existen)
-fetch('zonas.geojson')
-  .then(r => r.json())
-  .then(geo => {
-    zonasLayer = L.geoJSON(geo, {
-      onEachFeature: (feature, layer) => {
-        layer.on('click', () => onZonaClick(feature, layer));
-      }
-    }).addTo(map);
-
-    // también las metemos al grupo editable
-    zonasLayer.eachLayer(l => drawnItems.addLayer(l));
+    setStatus("Comunas cargadas correctamente. Haz clic en una comuna para ver promedios.");
   })
-  .catch(() => { /* sin zonas al inicio */ });
-
-map.on(L.Draw.Event.CREATED, (e) => {
-  const layer = e.layer;
-  // asignar nombre por defecto
-  const name = prompt("Nombre de la zona:", `Zona ${drawnItems.getLayers().length + 1}`) || "Zona sin nombre";
-  layer.feature = layer.feature || { type: "Feature", properties: {} };
-  layer.feature.properties = { name };
-
-  drawnItems.addLayer(layer);
-  setStatus("Zona creada. Haz clic sobre ella para ver promedios.");
-});
-
-map.on(L.Draw.Event.EDITED, () => setStatus("Zonas editadas. Puedes exportar GeoJSON."));
-map.on(L.Draw.Event.DELETED, () => setStatus("Zona eliminada. Puedes exportar GeoJSON."));
+  .catch((err) => {
+    console.error(err);
+    setStatus("ERROR cargando comunas. Abre F12 → Console para ver el detalle.");
+  });
 
 // --- UI ---
 const excelFile = document.getElementById('excelFile');
@@ -163,19 +134,28 @@ function populateYears(years) {
 }
 
 // --- Click en zona: calcular promedios ---
-function onZonaClick(feature, layer) {
+function onZonaClick(feature, layer, zonaNameFromLayer) {
   if (!dataRows.length) {
     results.innerHTML = "Primero carga un Excel.";
     return;
   }
 
   const selectedYear = yearSelect.value;
-  const poly = featureToTurfPolygon(layer.toGeoJSON());
+  const poly = layer.toGeoJSON();
+
   const points = dataRows
     .filter(r => selectedYear === "ALL" ? true : r.anio === Number(selectedYear))
     .filter(r => turf.booleanPointInPolygon(turf.point([r.lon, r.lat]), poly));
 
-  renderBenchmark(feature.properties?.name ?? "Zona", points, selectedYear);
+  const zonaName =
+    zonaNameFromLayer ||
+    feature?.properties?.Comuna ||
+    feature?.properties?.COMUNA ||
+    feature?.properties?.NOM_COMUNA ||
+    "Comuna";
+
+  renderBenchmark(zonaName, points, selectedYear);
+}
 }
 
 function featureToTurfPolygon(geojson) {
