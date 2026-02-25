@@ -3,6 +3,7 @@
 // ======================
 const EXCEL_URL = "benchmark.xlsx";              // en la raíz del repo
 const COMUNAS_GEOJSON_URL = "comunas_magallanes.geojson";
+const lastUpdateEl = document.getElementById('lastUpdate');
 
 // ======================
 // Estado
@@ -81,14 +82,23 @@ async function loadComunas() {
 // ======================
 async function loadExcel() {
   if (typeof XLSX === "undefined") {
-    throw new Error("XLSX no está cargado. Revisa que xlsx.full.min.js esté antes de app.js en index.html.");
+    throw new Error("XLSX no está cargado.");
   }
 
-  // cache-busting para que al actualizar el Excel en GitHub se refleje rápido
-  const res = await fetch(`${EXCEL_URL}?v=${Date.now()}`);
-  if (!res.ok) throw new Error(`No se pudo cargar ${EXCEL_URL}. HTTP ${res.status}`);
+  const response = await fetch(EXCEL_URL, { method: "GET" });
 
-  const arrayBuffer = await res.arrayBuffer();
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar ${EXCEL_URL}. HTTP ${response.status}`);
+  }
+
+  // 📌 Obtener fecha desde header
+  const lastModified = response.headers.get("Last-Modified");
+  if (lastModified && lastUpdateEl) {
+    const date = new Date(lastModified);
+    lastUpdateEl.textContent = "Última actualización: " + date.toLocaleDateString("es-CL");
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
   const wb = XLSX.read(arrayBuffer, { type: "array" });
 
   const sheetName = wb.SheetNames[0];
@@ -96,10 +106,6 @@ async function loadExcel() {
 
   const raw = XLSX.utils.sheet_to_json(ws, { defval: null });
   dataRows = normalizeRows(raw);
-
-  if (!dataRows.length) {
-    throw new Error("No se encontraron filas válidas. Asegura columnas 'comuna' y 'anio' en benchmark.xlsx");
-  }
 
   years = [...new Set(dataRows.map(r => r.anio))].sort((a, b) => a - b);
   populateYears(years);
