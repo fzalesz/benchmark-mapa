@@ -3,6 +3,18 @@ let dataRows = [];
 let years = [];
 let comunasLayer = null;
 
+// --- UI ---
+const excelFile = document.getElementById('excelFile');
+const yearSelect = document.getElementById('yearSelect');
+const results = document.getElementById('results');
+const statusEl = document.getElementById('status');
+
+const exportBtn = document.getElementById('exportZonas');
+if (exportBtn) {
+  exportBtn.disabled = true;
+  exportBtn.title = "Deshabilitado (usando comunas como zonas fijas).";
+}
+
 // --- Mapa ---
 const map = L.map('map').setView([-53.0, -70.9], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -10,23 +22,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-// --- UI ---
-const excelFile = document.getElementById('excelFile');
-const yearSelect = document.getElementById('yearSelect');
-const results = document.getElementById('results');
-const statusEl = document.getElementById('status');
-
-// Si tu HTML tiene el botón exportZonas pero ya no lo usarás, lo desactivamos:
-const exportBtn = document.getElementById('exportZonas');
-if (exportBtn) {
-  exportBtn.disabled = true;
-  exportBtn.title = "Deshabilitado (usando comunas como zonas fijas).";
-}
-
 // --- Cargar comunas desde GeoJSON ---
-fetch('comunas_magallanes.geojson')  // ✅ OJO: una sola extensión
+fetch('comunas_magallanes.geojson')
   .then((response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status} al cargar comunas_magallanes.geojson`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} al cargar comunas_magallanes.geojson`);
+    }
     return response.json();
   })
   .then((data) => {
@@ -61,7 +62,7 @@ fetch('comunas_magallanes.geojson')  // ✅ OJO: una sola extensión
     setStatus("ERROR cargando comunas. Revisa F12 → Console.");
   });
 
-// --- Cargar Excel ---
+// --- Eventos: cargar Excel ---
 excelFile.addEventListener('change', async (ev) => {
   const file = ev.target.files?.[0];
   if (!file) return;
@@ -137,7 +138,7 @@ function onZonaClick(feature, layer, zonaNameFromLayer) {
   }
 
   const selectedYear = yearSelect.value;
-  const poly = layer.toGeoJSON(); // Polygon/MultiPolygon válido para Turf
+  const poly = layer.toGeoJSON();
 
   const points = dataRows
     .filter(r => selectedYear === "ALL" ? true : r.anio === Number(selectedYear))
@@ -174,6 +175,7 @@ function renderBenchmark(zonaName, rowsInZona, selectedYear) {
   if (selectedYear === "ALL") {
     const byYear = groupBy(rowsInZona, r => r.anio);
     const yearsSorted = Object.keys(byYear).map(Number).sort((a, b) => a - b);
+
     const histRows = yearsSorted.map(y => {
       const rr = byYear[y];
       return `
@@ -224,8 +226,7 @@ function renderBenchmark(zonaName, rowsInZona, selectedYear) {
 function groupBy(arr, keyFn) {
   return arr.reduce((acc, x) => {
     const k = keyFn(x);
-    acc[k] = acc[k] || [];
-    acc[k].push(x);
+    (acc[k] = acc[k] || []).push(x);
     return acc;
   }, {});
 }
