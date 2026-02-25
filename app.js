@@ -10,7 +10,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 // Cargar comunas desde GeoJSON
-fetch('12.geojson')
+fetch('comunas_magallanes.geojson.geojson')
   .then(response => response.json())
   .then(data => {
 
@@ -25,7 +25,7 @@ fetch('12.geojson')
 
         // Mostrar nombre al pasar el mouse
         layer.bindTooltip(
-          feature.properties.NOM_COMUNA || 
+          feature.properties.COMUNA || 
           feature.properties.nombre || 
           "Comuna"
         );
