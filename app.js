@@ -9,7 +9,37 @@ const map = L.map('map').setView([-53.0, -70.9], 6); // ajusta al centro de tu r
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18, attribution: '&copy; OpenStreetMap'
 }).addTo(map);
+// Cargar comunas desde GeoJSON
+fetch('zonas.geojson')
+  .then(response => response.json())
+  .then(data => {
 
+    L.geoJSON(data, {
+      style: {
+        color: "#444",
+        weight: 1,
+        fillOpacity: 0.2
+      },
+
+      onEachFeature: function(feature, layer) {
+
+        // Mostrar nombre al pasar el mouse
+        layer.bindTooltip(
+          feature.properties.NOM_COMUNA || 
+          feature.properties.nombre || 
+          "Comuna"
+        );
+
+        // Acción al hacer clic
+        layer.on('click', function() {
+          console.log("Comuna seleccionada:", feature.properties);
+          onZonaClick(feature, layer);
+        });
+      }
+
+    }).addTo(map);
+
+  });
 drawnItems = new L.FeatureGroup();
 map.addLayer(drawnItems);
 
